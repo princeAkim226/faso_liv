@@ -53,5 +53,18 @@
 	<string>FasoLiv a besoin de la caméra pour photographier votre CNIB (recto et verso).</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>FasoLiv a besoin d'accéder à vos photos pour téléverser le recto et le verso de votre CNIB.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>supabasekong-n5wmktsokjyssxemtifxpzlo.109.199.124.31.sslip.io</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+			</dict>
+		</dict>
+	</dict>
 </dict>
 </plist>

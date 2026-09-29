@@ -1,18 +1,19 @@
-﻿/// Configuration Supabase pour FasoLiv.
+/// Configuration Supabase pour FasoLiv.
 ///
-/// Clé publishable (anon) : destinée au client Flutter — ne jamais y mettre
+/// Backend dédié sur le VPS (Kong), distinct de Voltify et de l'ancien
+/// projet cloud. Clé anon destinée au client Flutter — ne jamais y mettre
 /// la clé `service_role`.
 class SupabaseConfig {
   SupabaseConfig._();
 
   static const String url = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: 'https://jlwjzlrdgkcmpnhzhmju.supabase.co',
+    defaultValue: 'http://supabasekong-n5wmktsokjyssxemtifxpzlo.109.199.124.31.sslip.io',
   );
 
   static const String publishableKey = String.fromEnvironment(
     'SUPABASE_PUBLISHABLE_KEY',
-    defaultValue: 'sb_publishable_e9X5FayIYlzbUHAUP61oKA_zV9oO-nq',
+    defaultValue: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5MDY4NDQwMCwiZXhwIjo0OTQ2MzU4MDAwLCJyb2xlIjoiYW5vbiJ9.Sakw3QitZljhuYZJRnn4D7pYH8leSbhEItiaC9Nj_dU',
   );
 
   static bool get estConfigure =>

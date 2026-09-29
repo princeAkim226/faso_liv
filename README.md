@@ -21,7 +21,15 @@ flutter build apk
 ```
 
 ## Backend
-Voir `SUPABASE_SETUP.md` pour les migrations SQL à exécuter dans l’ordre.
+L’application (comptes, courses, chat, fichiers) utilise le Supabase dédié FasoLiv sur le VPS, pas Voltify et pas l’ancien projet cloud.
+
+| URL | Rôle |
+|-----|------|
+| http://supabasekong-n5wmktsokjyssxemtifxpzlo.109.199.124.31.sslip.io | API Supabase (Kong) |
+
+La clé anon est dans `lib/core/config/supabase_config.dart` (variable Coolify `SERVICE_SUPABASEANON_KEY`). Les migrations `supabase/migrations/001` à `014` sont déjà appliquées sur la base `postgres` de ce service.
+
+Voir `SUPABASE_SETUP.md` pour le détail du schéma.
 
 ## API d’interconnexion Sôôma
 
