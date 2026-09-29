@@ -39,6 +39,16 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+# Firebase Admin SDK — NE JAMAIS committer
+**/fasoliv-fe0f7-*.json
+**/firebase-adminsdk*.json
+**/service-account*.json
+secrets/
+supabase/.env.push.local
+supabase/.env*.local
+supabase/.temp/
+
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile

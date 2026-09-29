@@ -9,9 +9,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/app_exceptions.dart';
+import '../../core/utils/maps_navigation.dart';
+import '../../models/course.dart';
 import '../../models/message_chat.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/service_providers.dart';
+import '../courses/validation_otp_screen.dart';
+import '../livreur/itineraire_map_screen.dart';
 
 /// Chat client ↔ livreur — ouvert dès que le livreur est choisi.
 class ChatScreen extends ConsumerStatefulWidget {
@@ -50,6 +54,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   int _noteChoisie = 0;
   bool _noteEnvoyee = false;
   bool _envoiNote = false;
+  double? _destLat;
+  double? _destLng;
+  String? _courseLivreurId;
+  StatutCourse? _statutCourse;
+  bool _actionStatut = false;
 
   @override
   void initState() {
@@ -82,6 +91,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
 
     try {
+      // Position client + id livreur + statut (carte / actions)
+      try {
+        final course =
+            await ref.read(courseServiceProvider).getCourse(widget.courseId);
+        final point = course.pointRamassage ?? course.pointLivraison;
+        if (mounted) {
+          setState(() {
+            if (point != null) {
+              _destLat = point.lat;
+              _destLng = point.lng;
+            }
+            _courseLivreurId = course.livreurId ?? widget.livreurId;
+            _statutCourse = course.statut;
+          });
+        }
+      } catch (_) {}
+
       final msgs = await ref
           .read(messagingServiceProvider)
           .chargerMessages(widget.courseId);
@@ -202,6 +228,132 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  Future<void> _ouvrirCarteDansApp() async {
+    final lat = _destLat;
+    final lng = _destLng;
+    if (lat == null || lng == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Position GPS indisponible pour cette course'),
+        ),
+      );
+      return;
+    }
+    final estLivreur = ref.read(authProvider).profil?.estLivreur == true;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ItineraireMapScreen(
+          courseId: widget.courseId,
+          pointClientLat: lat,
+          pointClientLng: lng,
+          titre: widget.titre,
+          modeLivreur: estLivreur,
+          livreurId: _courseLivreurId ?? widget.livreurId,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _ouvrirItineraire() async {
+    final lat = _destLat;
+    final lng = _destLng;
+    if (lat == null || lng == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Position du client indisponible pour cette course'),
+        ),
+      );
+      return;
+    }
+    try {
+      await MapsNavigation.ouvrirItineraire(
+        lat: lat,
+        lng: lng,
+        label: widget.titre,
+      );
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: AppColors.danger),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: AppColors.danger),
+      );
+    }
+  }
+
+  Future<void> _avancerStatutCourse() async {
+    final statut = _statutCourse;
+    if (statut == null || _actionStatut) return;
+
+    if (statut == StatutCourse.recupere) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ValidationOtpScreen(courseId: widget.courseId),
+        ),
+      );
+      try {
+        final course =
+            await ref.read(courseServiceProvider).getCourse(widget.courseId);
+        if (mounted) setState(() => _statutCourse = course.statut);
+      } catch (_) {}
+      return;
+    }
+
+    final next = statut.prochainStatutDb;
+    if (next == null) return;
+
+    setState(() => _actionStatut = true);
+    try {
+      final course = await ref.read(courseServiceProvider).avancerStatut(
+            courseId: widget.courseId,
+            nouveauStatut: next,
+          );
+      if (!mounted) return;
+      setState(() {
+        _statutCourse = course.statut;
+        _actionStatut = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Statut : ${course.statut.labelFr}'),
+          backgroundColor: AppColors.savane,
+        ),
+      );
+      // Recharge messages (message système)
+      final msgs = await ref
+          .read(messagingServiceProvider)
+          .chargerMessages(widget.courseId);
+      if (!mounted) return;
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(msgs);
+        _idsConnus
+          ..clear()
+          ..addAll(msgs.map((m) => m.id));
+      });
+      _scrollBas();
+    } on AppException catch (e) {
+      if (!mounted) return;
+      setState(() => _actionStatut = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: AppColors.danger),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _actionStatut = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: AppColors.danger),
+      );
+    }
+  }
+
   Future<void> _envoyerNote() async {
     final profil = ref.read(authProvider).profil;
     if (profil == null || profil.estLivreur) return;
@@ -252,6 +404,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final profil = ref.watch(authProvider).profil;
     // Seul le client (demandeur) peut noter — jamais le livreur
     final peutNoter = profil != null && !profil.estLivreur;
+    final estLivreur = profil?.estLivreur == true;
+    final aDestination = _destLat != null && _destLng != null;
 
     return Scaffold(
       backgroundColor: AppColors.ciel,
@@ -275,6 +429,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ],
         ),
         actions: [
+          if (aDestination)
+            IconButton(
+              onPressed: _ouvrirCarteDansApp,
+              icon: const Icon(Icons.map_rounded),
+              tooltip: estLivreur ? 'Suivre le trajet' : 'Suivre mon livreur',
+            ),
           if (widget.telephoneLivreur != null &&
               widget.telephoneLivreur!.isNotEmpty)
             IconButton(
@@ -286,6 +446,99 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       ),
       body: Column(
         children: [
+          if (aDestination)
+            Material(
+              color: const Color(0xFFE8F5EE),
+              child: ListTile(
+                dense: true,
+                leading: const Icon(Icons.map_rounded, color: AppColors.savane),
+                title: Text(
+                  estLivreur
+                      ? 'Se rendre chez le client'
+                      : 'Suivre mon livreur',
+                  style: GoogleFonts.dmSans(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  estLivreur
+                      ? 'Carte dans FasoLiv — suivi GPS en direct'
+                      : 'Voir le livreur se déplacer vers vous',
+                ),
+                trailing: FilledButton(
+                  onPressed: _ouvrirCarteDansApp,
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  child: Text(estLivreur ? 'Suivre' : 'Carte'),
+                ),
+              ),
+            ),
+          if (estLivreur && aDestination)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _ouvrirItineraire,
+                  icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                  label: const Text('Ouvrir Google Maps'),
+                ),
+              ),
+            ),
+          if (_statutCourse != null &&
+              _statutCourse != StatutCourse.annule &&
+              !widget.modeDemo)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE5EBE7)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.flag_rounded,
+                          size: 18, color: AppColors.savane),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Statut : ${_statutCourse!.labelFr}',
+                        style: GoogleFonts.dmSans(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _StatutStepper(statut: _statutCourse!),
+                  if (estLivreur &&
+                      _statutCourse!.prochaineActionLivreur != null) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed:
+                            _actionStatut ? null : _avancerStatutCourse,
+                        child: _actionStatut
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(_statutCourse!.prochaineActionLivreur!),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           if (widget.telephoneLivreur != null &&
               widget.telephoneLivreur!.isNotEmpty)
             Material(
@@ -297,7 +550,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   widget.telephoneLivreur!,
                   style: GoogleFonts.dmSans(fontWeight: FontWeight.w700),
                 ),
-                subtitle: const Text('Numéro du livreur'),
+                subtitle: Text(
+                  estLivreur ? 'Numéro du client' : 'Numéro du livreur',
+                ),
                 trailing: TextButton(
                   onPressed: _appeler,
                   child: const Text('Appeler'),
@@ -471,6 +726,66 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _StatutStepper extends StatelessWidget {
+  const _StatutStepper({required this.statut});
+
+  final StatutCourse statut;
+
+  int get _index {
+    switch (statut) {
+      case StatutCourse.propose:
+        return 0;
+      case StatutCourse.accepte:
+        return 1;
+      case StatutCourse.recupere:
+        return 2;
+      case StatutCourse.livre:
+        return 3;
+      default:
+        return 0;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const steps = ['Assignée', 'En route', 'Sur place', 'Livrée'];
+    final idx = _index;
+    return Row(
+      children: [
+        for (var i = 0; i < steps.length; i++) ...[
+          if (i > 0)
+            Expanded(
+              child: Container(
+                height: 2,
+                color: i <= idx
+                    ? AppColors.savane
+                    : AppColors.muted.withValues(alpha: 0.25),
+              ),
+            ),
+          Column(
+            children: [
+              Icon(
+                i <= idx ? Icons.check_circle : Icons.circle_outlined,
+                size: 16,
+                color: i <= idx ? AppColors.savane : AppColors.muted,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                steps[i],
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: i == idx ? FontWeight.w700 : FontWeight.w500,
+                  color: i <= idx ? AppColors.savaneFonce : AppColors.muted,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

@@ -15,6 +15,7 @@ import '../../widgets/brand_widgets.dart';
 import '../../widgets/livreur_card.dart';
 import '../chat/chat_screen.dart';
 import '../chat/conversations_screen.dart';
+import '../courses/historique_courses_screen.dart';
 
 /// Accueil client : recherche de livreurs selon localisation + filtres.
 class HomeDemandeurScreen extends ConsumerStatefulWidget {
@@ -404,6 +405,19 @@ class _HomeDemandeurScreenState extends ConsumerState<HomeDemandeurScreen>
                         ],
                       ),
                     ),
+                    if (!invite)
+                      BrandIconButton(
+                        icon: Icons.history_rounded,
+                        tooltip: 'Historique',
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const HistoriqueCoursesScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (!invite) const SizedBox(width: 4),
                     if (!invite)
                       BrandIconButton(
                         icon: Icons.chat_bubble_outline_rounded,

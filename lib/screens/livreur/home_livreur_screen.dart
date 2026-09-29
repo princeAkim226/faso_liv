@@ -16,7 +16,9 @@ import '../../services/cnib_storage_service.dart';
 import '../../widgets/brand_widgets.dart';
 import '../../widgets/cnib_upload_tile.dart';
 import '../chat/conversations_screen.dart';
+import '../courses/historique_courses_screen.dart';
 import 'avis_livreur_screen.dart';
+import 'courses_restaurant_screen.dart';
 
 /// Accueil livreur : profil + activation localisation temps réel.
 class HomeLivreurScreen extends ConsumerStatefulWidget {
@@ -256,6 +258,30 @@ class _HomeLivreurScreenState extends ConsumerState<HomeLivreurScreen> {
                 children: [
                   const BrandMark(compact: true),
                   const Spacer(),
+                  BrandIconButton(
+                    icon: Icons.restaurant_rounded,
+                    tooltip: 'Courses restaurants',
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const CoursesRestaurantScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  BrandIconButton(
+                    icon: Icons.history_rounded,
+                    tooltip: 'Historique',
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const HistoriqueCoursesScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 8),
                   BrandIconButton(
                     icon: Icons.chat_bubble_outline_rounded,
                     tooltip: 'Messagerie',

@@ -22,6 +22,9 @@ SQL Editor → New query → coller et Run :
 10. `supabase/migrations/010_messagerie_fonctionnelle.sql`
 11. `supabase/migrations/011_avis_visibles_livreur.sql` ← le livreur voit ses notes
 12. `supabase/migrations/012_notifications_push.sql` ← notif quand le livreur est choisi
+13. `supabase/migrations/013_suivi_livreur_client.sql` ← client voit le livreur sur la carte
+14. `supabase/migrations/014_statuts_et_historique.sql` ← En route / Sur place + historique
+
 
 ### Notation
 - Le client note 1–5 ★ (+ commentaire optionnel) dans le chat
@@ -38,15 +41,19 @@ Quand un client choisit un livreur :
 
 1. Créer un projet Firebase (Android, package `com.example.faso_liv`)
 2. Télécharger `google-services.json` → le placer dans `android/app/`
-3. Firebase Console → Paramètres projet → Cloud Messaging → **Clé serveur** (API Legacy)
-4. Déployer la fonction et le secret :
+3. Firebase Console → Compte de service → générer une clé JSON (Admin SDK)
+4. Déployer la fonction et le secret (FCM HTTP v1) :
    ```bash
+   # PowerShell — ne jamais committer le fichier JSON
+   $json = Get-Content "$env:USERPROFILE\Downloads\fasoliv-fe0f7-XXXX.json" -Raw
+   supabase secrets set FIREBASE_SERVICE_ACCOUNT_JSON="$json"
    supabase functions deploy notify-livreur
-   supabase secrets set FCM_SERVER_KEY=votre_cle_serveur_fcm
    ```
 5. Realtime : ajouter la table `notifications` à `supabase_realtime` (la migration 012 le tente déjà)
 
 Sans Firebase, le livreur est quand même alerté **si l’app est ouverte ou en arrière-plan** (Realtime + notif locale).
+
+> ⚠️ Le fichier `fasoliv-fe0f7-….json` est une **clé privée**. Ne le mets jamais sur GitHub.
 
 ### 2. Auth — confirmation email
 Authentication → Providers → Email :

@@ -1,16 +1,69 @@
-// Edge Function : envoie une notification FCM au livreur choisi.
-// Deploy: supabase functions deploy notify-livreur
-// Secret: supabase secrets set FCM_SERVER_KEY=votre_cle_fcm
+// Edge Function : push FCM HTTP v1 au livreur choisi.
 //
-// Appelée automatiquement par le client après demarrer_course_avec_livreur,
-// ou via Database Webhook sur INSERT notifications.
+// Secrets :
+//   supabase secrets set FIREBASE_SERVICE_ACCOUNT_JSON --env-file ...
+//   (contenu JSON du compte de service Firebase Admin SDK)
+//
+// Deploy :
+//   supabase functions deploy notify-livreur
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import * as jose from 'https://deno.land/x/jose@v4.15.5/index.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
     'authorization, x-client-info, apikey, content-type',
+}
+
+type ServiceAccount = {
+  project_id: string
+  client_email: string
+  private_key: string
+}
+
+async function getFcmAccessToken(sa: ServiceAccount): Promise<string> {
+  const pem = sa.private_key.replace(/\\n/g, '\n')
+  const privateKey = await jose.importPKCS8(pem, 'RS256')
+
+  const jwt = await new jose.SignJWT({
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',
+  })
+    .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
+    .setIssuer(sa.client_email)
+    .setSubject(sa.client_email)
+    .setAudience('https://oauth2.googleapis.com/token')
+    .setIssuedAt()
+    .setExpirationTime('1h')
+    .sign(privateKey)
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  })
+
+  const tokenJson = await tokenRes.json()
+  if (!tokenRes.ok || !tokenJson.access_token) {
+    throw new Error(
+      `OAuth token échoué : ${JSON.stringify(tokenJson)}`,
+    )
+  }
+  return tokenJson.access_token as string
+}
+
+function loadServiceAccount(): ServiceAccount {
+  const raw = Deno.env.get('FIREBASE_SERVICE_ACCOUNT_JSON')
+  if (!raw) {
+    throw new Error(
+      'FIREBASE_SERVICE_ACCOUNT_JSON manquant. '
+        + 'supabase secrets set FIREBASE_SERVICE_ACCOUNT_JSON=...',
+    )
+  }
+  return JSON.parse(raw) as ServiceAccount
 }
 
 Deno.serve(async (req) => {
@@ -24,10 +77,13 @@ Deno.serve(async (req) => {
     const livreurId = body.livreur_id as string | undefined
 
     if (!courseId && !livreurId) {
-      return new Response(JSON.stringify({ error: 'course_id ou livreur_id requis' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({ error: 'course_id ou livreur_id requis' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const supabase = createClient(
@@ -60,7 +116,8 @@ Deno.serve(async (req) => {
         .eq('id', course.demandeur_id)
         .maybeSingle()
 
-      const nom = [client?.prenom, client?.nom].filter(Boolean).join(' ') || 'Un client'
+      const nom =
+        [client?.prenom, client?.nom].filter(Boolean).join(' ') || 'Un client'
       corps = `${nom} vous a choisi. Ouvrez FasoLiv pour discuter.`
     }
 
@@ -82,52 +139,47 @@ Deno.serve(async (req) => {
       )
     }
 
-    const fcmKey = Deno.env.get('FCM_SERVER_KEY')
-    if (!fcmKey) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: 'FCM_SERVER_KEY non configurée (supabase secrets set FCM_SERVER_KEY=...)',
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
-    }
+    const sa = loadServiceAccount()
+    const accessToken = await getFcmAccessToken(sa)
 
-    const fcmRes = await fetch('https://fcm.googleapis.com/fcm/send', {
-      method: 'POST',
-      headers: {
-        Authorization: `key=${fcmKey}`,
-        'Content-Type': 'application/json',
+    const fcmRes = await fetch(
+      `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: {
+            token,
+            notification: {
+              title: titre,
+              body: corps,
+            },
+            data: {
+              type: 'course_assignee',
+              course_id: courseId ?? '',
+              click_action: 'FLUTTER_NOTIFICATION_CLICK',
+            },
+            android: {
+              priority: 'HIGH',
+              notification: {
+                channel_id: 'fasoliv_courses',
+                sound: 'default',
+              },
+            },
+          },
+        }),
       },
-      body: JSON.stringify({
-        to: token,
-        priority: 'high',
-        notification: {
-          title: titre,
-          body: corps,
-          sound: 'default',
-          click_action: 'FLUTTER_NOTIFICATION_CLICK',
-        },
-        data: {
-          type: 'course_assignee',
-          course_id: courseId ?? '',
-          click_action: 'FLUTTER_NOTIFICATION_CLICK',
-        },
-      }),
-    })
+    )
 
     const fcmJson = await fcmRes.json()
 
-    return new Response(
-      JSON.stringify({ ok: fcmRes.ok, fcm: fcmJson }),
-      {
-        status: fcmRes.ok ? 200 : 502,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      },
-    )
+    return new Response(JSON.stringify({ ok: fcmRes.ok, fcm: fcmJson }), {
+      status: fcmRes.ok ? 200 : 502,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), {
       status: 500,

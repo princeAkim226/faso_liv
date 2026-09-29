@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/utils/app_exceptions.dart';
 import '../models/course.dart';
+import '../models/course_historique.dart';
 import 'push_notification_service.dart';
 
 /// Opérations sur le cycle de vie des courses.
@@ -165,6 +166,46 @@ class CourseService {
     } catch (e) {
       if (e is AppException) rethrow;
       throw AppException('Impossible d\'enregistrer la note : $e');
+    }
+  }
+
+  /// Livreur : En route (`accepte`) ou Sur place (`recupere`) + message chat.
+  Future<Course> avancerStatut({
+    required String courseId,
+    required String nouveauStatut,
+  }) async {
+    try {
+      final raw = await _supabase.rpc(
+        'avancer_statut_course',
+        params: {
+          'p_course_id': courseId,
+          'p_nouveau_statut': nouveauStatut,
+        },
+      );
+      return _parseCourseRpc(raw);
+    } on PostgrestException catch (e) {
+      throw AppException('Statut : ${e.message}');
+    } catch (e) {
+      if (e is AppException) rethrow;
+      throw AppException('Impossible de mettre à jour le statut : $e');
+    }
+  }
+
+  /// Historique des courses de l'utilisateur connecté.
+  Future<List<CourseHistorique>> mesCoursesHistorique() async {
+    try {
+      final raw = await _supabase.rpc('mes_courses_historique');
+      if (raw is! List) return [];
+      return raw
+          .map((e) => CourseHistorique.fromJson(
+                Map<String, dynamic>.from(e as Map),
+              ))
+          .toList();
+    } on PostgrestException catch (e) {
+      throw AppException('Historique : ${e.message}');
+    } catch (e) {
+      if (e is AppException) rethrow;
+      throw AppException('Impossible de charger l\'historique : $e');
     }
   }
 

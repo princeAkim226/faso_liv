@@ -18,15 +18,45 @@ enum StatutCourse {
       case StatutCourse.disponible:
         return 'Disponible';
       case StatutCourse.propose:
-        return 'Proposée';
+        return 'Assignée';
       case StatutCourse.accepte:
-        return 'Acceptée';
+        return 'En route';
       case StatutCourse.recupere:
-        return 'Récupérée';
+        return 'Sur place';
       case StatutCourse.livre:
         return 'Livrée';
       case StatutCourse.annule:
         return 'Annulée';
+    }
+  }
+
+  /// Étapes visibles client / livreur (hors disponible/annule).
+  bool get estActive =>
+      this == StatutCourse.propose ||
+      this == StatutCourse.accepte ||
+      this == StatutCourse.recupere;
+
+  String? get prochaineActionLivreur {
+    switch (this) {
+      case StatutCourse.propose:
+        return 'Je suis en route';
+      case StatutCourse.accepte:
+        return 'Je suis sur place';
+      case StatutCourse.recupere:
+        return 'Valider la livraison (OTP)';
+      default:
+        return null;
+    }
+  }
+
+  String? get prochainStatutDb {
+    switch (this) {
+      case StatutCourse.propose:
+        return 'accepte';
+      case StatutCourse.accepte:
+        return 'recupere';
+      default:
+        return null;
     }
   }
 }
@@ -83,6 +113,24 @@ class Course {
 
   bool get messagerieDebloquee =>
       livreurId != null && statut != StatutCourse.annule;
+
+  /// Parse `adresse_ramassage_gps` / livraison au format `"lat,lng"`.
+  static ({double lat, double lng})? parseCoordonnees(String? brut) {
+    if (brut == null || brut.trim().isEmpty) return null;
+    final parts = brut.split(',');
+    if (parts.length < 2) return null;
+    final lat = double.tryParse(parts[0].trim());
+    final lng = double.tryParse(parts[1].trim());
+    if (lat == null || lng == null) return null;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return (lat: lat, lng: lng);
+  }
+
+  ({double lat, double lng})? get pointRamassage =>
+      parseCoordonnees(adresseRamassageGps);
+
+  ({double lat, double lng})? get pointLivraison =>
+      parseCoordonnees(adresseLivraisonGps);
 
   factory Course.fromJson(Map<String, dynamic> json) {
     return Course(
